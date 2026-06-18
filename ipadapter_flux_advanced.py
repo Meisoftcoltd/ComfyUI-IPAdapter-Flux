@@ -61,6 +61,21 @@ class InstantXFluxIPAdapterModelAdvanced:
             state_dict = comfy.utils.load_torch_file(model_path, safe_load=True)
         else:
             state_dict = torch.load(model_path, map_location="cpu", weights_only=False)
+
+        # --- BLOQUE TRADUCTOR MEJORADO ---
+        if "image_proj" not in state_dict:
+            parsed_dict = {"image_proj": {}, "ip_adapter": {}}
+            for k, v in state_dict.items():
+                if k.startswith("image_proj."):
+                    parsed_dict["image_proj"][k.replace("image_proj.", "")] = v
+                elif k.startswith("ip_adapter."):
+                    parsed_dict["ip_adapter"][k.replace("ip_adapter.", "")] = v
+                else:
+                    # Conserva cualquier otra clave en la raíz por seguridad
+                    parsed_dict[k] = v
+            state_dict = parsed_dict
+        # ---------------------------------
+
         self.joint_attention_dim = 4096
         self.hidden_size = 3072
         # init projection model
