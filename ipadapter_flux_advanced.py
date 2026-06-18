@@ -54,8 +54,13 @@ class InstantXFluxIPAdapterModelAdvanced:
                 self.clip_image_processor = AutoProcessor.from_pretrained(self.image_encoder_path)
             except:
                 raise Exception(f"Failed to load clip image processor for {self.image_encoder_path}, please check the huggingface cache directory or clip_vision directory")
-        # state_dict
-        state_dict = torch.load(os.path.join(MODELS_DIR,self.ip_ckpt), map_location="cpu")
+        import comfy.utils
+        # state_dict (Soporte PyTorch 2.6 y Safetensors nativo)
+        model_path = os.path.join(MODELS_DIR, self.ip_ckpt)
+        if model_path.endswith(".safetensors"):
+            state_dict = comfy.utils.load_torch_file(model_path, safe_load=True)
+        else:
+            state_dict = torch.load(model_path, map_location="cpu", weights_only=False)
         self.joint_attention_dim = 4096
         self.hidden_size = 3072
         # init projection model
