@@ -62,29 +62,29 @@ class InstantXFluxIPAdapterModel:
         else:
             state_dict = torch.load(model_path, map_location="cpu", weights_only=False)
 
-        # --- BLOQUE TRADUCTOR INTELIGENTE ---
-        if "image_proj" not in state_dict:
+        # --- BLOQUE TRADUCTOR DEFINITIVO (A PRUEBA DE BALAS) ---
+        if "image_proj" not in state_dict or not isinstance(state_dict.get("image_proj"), dict):
             parsed_dict = {"image_proj": {}, "ip_adapter": {}}
             for k, v in state_dict.items():
-                # 1. Agrupar piezas de image_proj
-                if k.startswith("image_proj."):
-                    parsed_dict["image_proj"][k.replace("image_proj.", "")] = v
-                elif k.startswith("image_proj_model."):
-                    parsed_dict["image_proj"][k.replace("image_proj_model.", "")] = v
-                elif k.startswith("proj.") or k.startswith("norm."): # <-- Atrapa los huérfanos sin prefijo
-                    parsed_dict["image_proj"][k] = v
+                # 1. Atrapa los pesos del proyector sin importar su prefijo numérico o de texto
+                if "proj.0.weight" in k: parsed_dict["image_proj"]["proj.0.weight"] = v
+                elif "proj.0.bias" in k: parsed_dict["image_proj"]["proj.0.bias"] = v
+                elif "proj.2.weight" in k: parsed_dict["image_proj"]["proj.2.weight"] = v
+                elif "proj.2.bias" in k: parsed_dict["image_proj"]["proj.2.bias"] = v
+                elif "norm.weight" in k and "blocks" not in k: parsed_dict["image_proj"]["norm.weight"] = v
+                elif "norm.bias" in k and "blocks" not in k: parsed_dict["image_proj"]["norm.bias"] = v
 
-                # 2. Agrupar piezas de ip_adapter
-                elif k.startswith("ip_adapter."):
-                    parsed_dict["ip_adapter"][k.replace("ip_adapter.", "")] = v
-                elif k.startswith("double_blocks.") or k.startswith("single_blocks."): # <-- Atrapa los huérfanos sin prefijo
-                    parsed_dict["ip_adapter"][k] = v
+                # 2. Atrapa los bloques de atención del IP-Adapter cortando desde la palabra clave
+                elif "double_blocks." in k:
+                    parsed_dict["ip_adapter"][k[k.find("double_blocks."):]] = v
+                elif "single_blocks." in k:
+                    parsed_dict["ip_adapter"][k[k.find("single_blocks."):]] = v
 
-                # 3. Conservar el resto
-                else:
-                    parsed_dict[k] = v
+                # 3. Conserva todas las claves originales en la raíz por seguridad
+                parsed_dict[k] = v
+
             state_dict = parsed_dict
-        # ------------------------------------
+        # -------------------------------------------------------
 
         self.joint_attention_dim = 4096
         self.hidden_size = 3072
