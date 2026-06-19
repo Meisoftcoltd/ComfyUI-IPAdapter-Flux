@@ -1,6 +1,7 @@
 import torch
 import os
 import logging
+import re
 import folder_paths
 from transformers import AutoProcessor, SiglipVisionModel
 from PIL import Image
@@ -62,11 +63,11 @@ class InstantXFluxIPAdapterModel:
         else:
             state_dict = torch.load(model_path, map_location="cpu", weights_only=False)
 
-        # --- BLOQUE TRADUCTOR DEFINITIVO (A PRUEBA DE BALAS) ---
+        # --- BLOQUE TRADUCTOR DEFINITIVO Y FINAL ---
         if "image_proj" not in state_dict or not isinstance(state_dict.get("image_proj"), dict):
             parsed_dict = {"image_proj": {}, "ip_adapter": {}}
             for k, v in state_dict.items():
-                # 1. Atrapa los pesos del proyector sin importar su prefijo numérico o de texto
+                # 1. Atrapa los pesos del proyector (image_proj)
                 if "proj.0.weight" in k: parsed_dict["image_proj"]["proj.0.weight"] = v
                 elif "proj.0.bias" in k: parsed_dict["image_proj"]["proj.0.bias"] = v
                 elif "proj.2.weight" in k: parsed_dict["image_proj"]["proj.2.weight"] = v
@@ -74,17 +75,21 @@ class InstantXFluxIPAdapterModel:
                 elif "norm.weight" in k and "blocks" not in k: parsed_dict["image_proj"]["norm.weight"] = v
                 elif "norm.bias" in k and "blocks" not in k: parsed_dict["image_proj"]["norm.bias"] = v
 
-                # 2. Atrapa los bloques de atención del IP-Adapter cortando desde la palabra clave
-                elif "double_blocks." in k:
-                    parsed_dict["ip_adapter"][k[k.find("double_blocks."):]] = v
-                elif "single_blocks." in k:
-                    parsed_dict["ip_adapter"][k[k.find("single_blocks."):]] = v
+                # 2. Atrapa los pesos del IP-Adapter con Regex (índices 0 al 56)
+                elif "to_k_ip" in k or "to_v_ip" in k:
+                    match = re.search(r'(\d+)\.(to_[kv]_ip\.weight)', k)
+                    if match:
+                        # Esto asegura que la clave sea exactamente "0.to_k_ip.weight", etc.
+                        parsed_dict["ip_adapter"][f"{match.group(1)}.{match.group(2)}"] = v
+                    else:
+                        parsed_dict["ip_adapter"][k] = v
 
-                # 3. Conserva todas las claves originales en la raíz por seguridad
-                parsed_dict[k] = v
+                # 3. Conserva todo lo demás en la raíz
+                else:
+                    parsed_dict[k] = v
 
             state_dict = parsed_dict
-        # -------------------------------------------------------
+        # -------------------------------------------
 
         self.joint_attention_dim = 4096
         self.hidden_size = 3072
